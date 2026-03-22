@@ -74,6 +74,7 @@ export default function Layout() {
   const [drawerOpen, setDrawerOpen]         = useState(false)
   const [unreadProjects, setUnreadProjects] = useState(0)
   const { user, setRequests, requests }     = useStore()
+  const location                            = useLocation()
 
   useNotifications()
 
@@ -100,6 +101,11 @@ export default function Layout() {
     }
     setUnreadProjects(unreadCount)
   }, [user?.id])
+
+  // Recheck unread every time route changes
+  useEffect(() => {
+    checkUnread()
+  }, [location.pathname, checkUnread])
 
   useEffect(() => {
     if (!user?.id) return
