@@ -16,6 +16,41 @@ const STATUS_STYLE = {
   rejected: { text: '#991b1b', bg: '#fee2e2', border: '#fca5a5' },
 }
 
+function PeerRating({ userId }) {
+  const [avgRating, setAvgRating]       = useState(null)
+  const [totalRatings, setTotalRatings] = useState(0)
+
+  useEffect(() => {
+    supabase.from('ratings').select('score')
+      .eq('rated_user_id', userId)
+      .then(({ data }) => {
+        if (!data?.length) return
+        const avg = data.reduce((a, b) => a + b.score, 0) / data.length
+        setAvgRating(Math.round(avg * 10) / 10)
+        setTotalRatings(data.length)
+      })
+  }, [userId])
+
+  return (
+    <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-xl">
+      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Peer Rating</p>
+      {avgRating ? (
+        <div className="flex items-center gap-2">
+          <span className="text-xl font-black text-yellow-500">{avgRating}</span>
+          <div className="flex gap-0.5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <span key={i} className={`text-sm ${i < Math.round(avgRating) ? 'text-yellow-400' : 'text-gray-300 dark:text-gray-600'}`}>★</span>
+            ))}
+          </div>
+          <span className="text-xs text-gray-400">({totalRatings})</span>
+        </div>
+      ) : (
+        <p className="text-xs text-gray-400">No peer ratings yet</p>
+      )}
+    </div>
+  )
+}
+
 function ApplicantProfileModal({ userId, applicantSkills, onClose }) {
   const [profile, setProfile]                     = useState(null)
   const [contributionCount, setContributionCount] = useState(0)
@@ -26,15 +61,12 @@ function ApplicantProfileModal({ userId, applicantSkills, onClose }) {
   useEffect(() => {
     supabase.from('users').select('*').eq('id', userId).single()
       .then(({ data }) => setProfile(data))
-
     supabase.from('projects').select('id', { count: 'exact' })
       .contains('members', [userId]).neq('owner_id', userId)
       .then(({ count }) => setContributionCount(count || 0))
-
     supabase.from('requests').select('id', { count: 'exact' })
       .eq('applicant_id', userId)
       .then(({ count }) => setApplicationCount(count || 0))
-
     if (applicantSkills?.length) {
       fetchMatchScore(
         applicantSkills,
@@ -53,7 +85,6 @@ function ApplicantProfileModal({ userId, applicantSkills, onClose }) {
           </div>
         ) : (
           <>
-            {/* Avatar + name */}
             <div className="flex flex-col items-center text-center mb-5">
               {profile.avatar ? (
                 <img src={profile.avatar} alt=""
@@ -71,7 +102,7 @@ function ApplicantProfileModal({ userId, applicantSkills, onClose }) {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-2 mb-5">
+            <div className="grid grid-cols-3 gap-2 mb-4">
               {[
                 ['Contributions', contributionCount],
                 ['Applications',  applicationCount],
@@ -80,17 +111,18 @@ function ApplicantProfileModal({ userId, applicantSkills, onClose }) {
                 <div key={l} className="bg-gray-50 dark:bg-gray-800 rounded-xl p-2.5 text-center">
                   <p className={`text-base font-black ${
                     l === 'Match' && matchResult
-                      ? matchResult.score >= 70
-                        ? 'text-teal-600 dark:text-teal-400'
-                        : matchResult.score >= 40
-                        ? 'text-amber-600 dark:text-amber-400'
-                        : 'text-red-500'
+                      ? matchResult.score >= 70 ? 'text-teal-600 dark:text-teal-400'
+                      : matchResult.score >= 40 ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-red-500'
                       : 'text-gray-900 dark:text-white'
                   }`}>{v}</p>
                   <p className="text-[9px] text-gray-400 mt-0.5">{l}</p>
                 </div>
               ))}
             </div>
+
+            {/* Peer Rating */}
+            <PeerRating userId={userId} />
 
             {/* Match reason */}
             {matchResult?.reason && (
@@ -147,8 +179,8 @@ export default function Requests() {
   const { openDrawer }        = useOutletContext()
   const { user, setRequests } = useStore()
   const [tab, setTab]         = useState('incoming')
-  const [incoming, setIncoming]         = useState([])
-  const [sent, setSent]                 = useState([])
+  const [incoming, setIncoming]             = useState([])
+  const [sent, setSent]                     = useState([])
   const [viewingProfile, setViewingProfile] = useState(null)
 
   const fetchIncoming = async () => {
@@ -285,7 +317,6 @@ export default function Requests() {
             : incoming.map((r) => (
               <div key={r.id} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-4">
                 <div className="flex items-center gap-3 mb-3">
-                  {/* Clickable to view profile */}
                   <button
                     onClick={() => setViewingProfile({ id: r.applicant_id, skills: r.applicant_skills })}
                     className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity">
@@ -361,7 +392,6 @@ export default function Requests() {
         )}
       </div>
 
-      {/* Applicant profile modal */}
       {viewingProfile && (
         <ApplicantProfileModal
           userId={viewingProfile.id}

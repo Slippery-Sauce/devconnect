@@ -9,6 +9,55 @@ import SkillTag from '../components/SkillTag'
 
 const LOOKING_FOR = ['Hackathons', 'Short-term', 'Open source']
 
+function RatingDisplay({ userId }) {
+  const [avgRating, setAvgRating]       = useState(null)
+  const [totalRatings, setTotalRatings] = useState(0)
+  const [recentComments, setRecentComments] = useState([])
+
+  useEffect(() => {
+    if (!userId) return
+    supabase.from('ratings').select('score, comment')
+      .eq('rated_user_id', userId)
+      .then(({ data }) => {
+        if (!data?.length) return
+        const avg = data.reduce((a, b) => a + b.score, 0) / data.length
+        setAvgRating(Math.round(avg * 10) / 10)
+        setTotalRatings(data.length)
+        setRecentComments(data.filter((r) => r.comment).slice(0, 3))
+      })
+  }, [userId])
+
+  if (!avgRating) return null
+
+  return (
+    <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-2xl p-4">
+      <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
+        Peer Rating
+      </h3>
+      <div className="flex items-center gap-3 mb-3">
+        <span className="text-3xl font-black text-yellow-500">{avgRating}</span>
+        <div>
+          <div className="flex gap-0.5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <span key={i} className={`text-lg ${i < Math.round(avgRating) ? 'text-yellow-400' : 'text-gray-300 dark:text-gray-600'}`}>★</span>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-0.5">{totalRatings} rating{totalRatings !== 1 ? 's' : ''} from teammates</p>
+        </div>
+      </div>
+      {recentComments.length > 0 && (
+        <div className="space-y-2">
+          {recentComments.map((r, i) => (
+            <p key={i} className="text-xs text-gray-600 dark:text-gray-300 italic bg-white dark:bg-gray-800 rounded-lg px-3 py-2">
+              "{r.comment}"
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Profile() {
   const { openDrawer }          = useOutletContext()
   const navigate                = useNavigate()
@@ -19,7 +68,7 @@ export default function Profile() {
   const [profile, setProfile]   = useState({
     name: '', bio: '', location: '', skills: [], looking_for: [], avatar: null,
   })
-  const [newSkill, setNewSkill] = useState('')
+  const [newSkill, setNewSkill]             = useState('')
   const [sentCount, setSentCount]           = useState(0)
   const [contributionCount, setContributionCount] = useState(0)
   const photoRef = useRef(null)
@@ -28,19 +77,17 @@ export default function Profile() {
     if (!user?.id) return
     supabase.from('users').select('*').eq('id', user.id).single().then(({ data }) => {
       if (data) setProfile({
-        name:       data.name || '',
-        bio:        data.bio || '',
-        location:   data.location || '',
-        skills:     data.skills || [],
+        name:        data.name || '',
+        bio:         data.bio || '',
+        location:    data.location || '',
+        skills:      data.skills || [],
         looking_for: data.looking_for || [],
-        avatar:     data.avatar || null,
+        avatar:      data.avatar || null,
       })
     })
-    // Count applications sent
     supabase.from('requests').select('id', { count: 'exact' })
       .eq('applicant_id', user.id)
       .then(({ count }) => setSentCount(count || 0))
-    // Count contributions — projects where user is member but not owner
     supabase.from('projects').select('id', { count: 'exact' })
       .contains('members', [user.id])
       .neq('owner_id', user.id)
@@ -108,7 +155,7 @@ export default function Profile() {
             className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 transition-all hidden lg:block">
             Redo Setup
           </button>
-          <button onClick={() => { if (editing) save(); else setEditing(true); }}
+          <button onClick={() => { if (editing) save(); else setEditing(true) }}
             className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
               editing
                 ? 'border-teal-400 text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-950'
@@ -162,13 +209,13 @@ export default function Profile() {
           )}
         </div>
 
-        {/* Stats — now includes contributions */}
+        {/* Stats */}
         <div className="grid grid-cols-4 gap-2">
           {[
-            ['Applications', sentCount],
+            ['Applications',  sentCount],
             ['Contributions', contributionCount],
-            ['Avg Match',    avgMatch !== null ? `${avgMatch}%` : '—'],
-            ['Skills',       profile.skills.length],
+            ['Avg Match',     avgMatch !== null ? `${avgMatch}%` : '—'],
+            ['Skills',        profile.skills.length],
           ].map(([l, v]) => (
             <div key={l} className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3 text-center">
               <p className="text-lg font-black text-gray-900 dark:text-white">{v}</p>
@@ -176,6 +223,9 @@ export default function Profile() {
             </div>
           ))}
         </div>
+
+        {/* Peer Rating */}
+        <RatingDisplay userId={user?.id} />
 
         {/* Bio */}
         <div>

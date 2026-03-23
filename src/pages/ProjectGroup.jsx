@@ -20,16 +20,61 @@ function MemberName({ userId }) {
 }
 
 function MembersTab({ project, user, onRemove }) {
-  const [members, setMembers] = useState([])
+  const [members, setMembers]         = useState([])
+  const [ratings, setRatings]         = useState({})
+  const [ratingModal, setRatingModal] = useState(null)
+  const [score, setScore]             = useState(0)
+  const [comment, setComment]         = useState('')
+  const [submitting, setSubmitting]   = useState(false)
 
   useEffect(() => {
     if (!project?.members?.length) return
-    supabase
-      .from('users')
-      .select('id, name, email')
+    supabase.from('users').select('id, name, email, avatar')
       .in('id', project.members)
       .then(({ data }) => setMembers(data || []))
+
+    supabase.from('ratings').select('*')
+      .eq('project_id', project.id)
+      .eq('rated_by_id', user.id)
+      .then(({ data }) => {
+        const map = {}
+        data?.forEach((r) => { map[r.rated_user_id] = r })
+        setRatings(map)
+      })
   }, [project?.members?.join(',')])
+
+  const submitRating = async () => {
+    if (!score) { toast('Please select a score', 'error'); return }
+    setSubmitting(true)
+    try {
+      const existing = ratings[ratingModal.userId]
+      if (existing) {
+        await supabase.from('ratings')
+          .update({ score, comment })
+          .eq('id', existing.id)
+      } else {
+        await supabase.from('ratings').insert({
+          project_id:    project.id,
+          rated_user_id: ratingModal.userId,
+          rated_by_id:   user.id,
+          score,
+          comment,
+        })
+      }
+      setRatings((prev) => ({
+        ...prev,
+        [ratingModal.userId]: { rated_user_id: ratingModal.userId, score, comment }
+      }))
+      toast('Rating submitted! ⭐')
+      setRatingModal(null)
+      setScore(0)
+      setComment('')
+    } catch (err) {
+      toast(err.message, 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const isOwner = project.owner_id === user?.id
 
@@ -41,32 +86,124 @@ function MembersTab({ project, user, onRemove }) {
           <p className="text-sm">No members yet</p>
         </div>
       )}
+
       {members.map((m) => {
         const isProjectOwner = m.id === project.owner_id
         const displayName    = m.name || m.email?.split('@')[0] || 'Member'
+        const myRating       = ratings[m.id]
+        const canRate        = m.id !== user?.id
+
         return (
-          <div key={m.id} className="flex items-center gap-3 py-3.5">
-            <Avatar name={displayName} size={40} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{displayName}</p>
-              {m.id === user?.id && <p className="text-xs text-gray-400">You</p>}
+          <div key={m.id} className="py-3.5">
+            <div className="flex items-center gap-3">
+              {m.avatar ? (
+                <img src={m.avatar} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+              ) : (
+                <Avatar name={displayName} size={40} />
+              )}
+
+              <div className="flex-1 min-w-0">
+                {/* Name row with inline star */}
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{displayName}</p>
+                  {canRate && (
+                    <button
+                      onClick={() => {
+                        setRatingModal({ userId: m.id, name: displayName })
+                        setScore(myRating?.score || 0)
+                        setComment(myRating?.comment || '')
+                      }}
+                      className="flex-shrink-0 transition-transform hover:scale-125 active:scale-110"
+                      title={myRating ? `Your rating: ${myRating.score}/5 — click to edit` : 'Rate this member'}
+                    >
+                      <span className={`text-base leading-none ${
+                        myRating ? 'text-yellow-400' : 'text-gray-300 dark:text-gray-600 hover:text-yellow-400'
+                      }`}>
+                        ★
+                      </span>
+                    </button>
+                  )}
+                </div>
+                {m.id === user?.id && <p className="text-xs text-gray-400">You</p>}
+                {/* Show stars if already rated */}
+                {myRating && (
+                  <div className="flex items-center gap-0.5 mt-0.5">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <span key={i} className={`text-[10px] ${i < myRating.score ? 'text-yellow-400' : 'text-gray-300 dark:text-gray-600'}`}>★</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className={`text-[10px] font-bold rounded-full px-2.5 py-0.5 ${
+                  isProjectOwner
+                    ? 'text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950'
+                    : 'text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950'
+                }`}>
+                  {isProjectOwner ? 'Owner' : 'Contributor'}
+                </span>
+                {isOwner && !isProjectOwner && (
+                  <button onClick={() => onRemove(m.id)}
+                    className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors">
+                    Remove
+                  </button>
+                )}
+              </div>
             </div>
-            <span className={`text-[10px] font-bold rounded-full px-2.5 py-0.5 ${
-              isProjectOwner
-                ? 'text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950'
-                : 'text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950'
-            }`}>
-              {isProjectOwner ? 'Owner' : 'Contributor'}
-            </span>
-            {isOwner && !isProjectOwner && (
-              <button onClick={() => onRemove(m.id)}
-                className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors ml-1">
-                Remove
-              </button>
-            )}
           </div>
         )
       })}
+
+      {/* Rating Modal */}
+      {ratingModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-5"
+          onClick={(e) => e.target === e.currentTarget && setRatingModal(null)}>
+          <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-sm p-6 animate-fade-in">
+            <h3 className="text-base font-black text-gray-900 dark:text-white mb-1">
+              Rate {ratingModal.name}
+            </h3>
+            <p className="text-xs text-gray-400 mb-5">How well did they contribute to this project?</p>
+
+            {/* 5 star selector */}
+            <div className="flex justify-center gap-3 mb-4">
+              {[1, 2, 3, 4, 5].map((s) => (
+                <button key={s} onClick={() => setScore(s)}
+                  className={`text-5xl transition-all hover:scale-110 active:scale-95 ${
+                    s <= score ? 'text-yellow-400 drop-shadow-sm' : 'text-gray-300 dark:text-gray-600'
+                  }`}>
+                  ★
+                </button>
+              ))}
+            </div>
+
+            {score > 0 && (
+              <p className="text-center text-sm font-bold text-gray-600 dark:text-gray-300 mb-4">
+                {['', '😕 Poor', '😐 Fair', '🙂 Good', '😊 Great', '🤩 Excellent!'][score]}
+              </p>
+            )}
+
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Leave a comment (optional)…"
+              rows={2}
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white placeholder-gray-400 outline-none focus:border-teal-500 transition-all mb-4"
+            />
+
+            <div className="flex gap-2">
+              <button onClick={() => setRatingModal(null)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={submitRating} disabled={submitting || !score}
+                className="flex-1 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white text-sm font-bold transition-colors disabled:opacity-60">
+                {submitting ? 'Saving…' : 'Submit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
